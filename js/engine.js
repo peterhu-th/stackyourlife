@@ -23,8 +23,17 @@ class GameEngine {
         this.forceSpecialNext = false;
         this.lastTrapezoidBottomWidth = 0;
         
+        // 粒子系统
+        this.particles = [];
+
+        // 音频系统
+        this.audio = {
+            piano: new Audio('resources/music/piano.mp3'),
+            drum: new Audio('resources/music/drum.mp3')
+        };
+        this.audio.piano.loop = true;
+        
         // 渲染相关
-        this.hue = Math.floor(Math.random() * 360);
         this.bgRenderer = new BackgroundRenderer();
         
         this.initGame();
@@ -49,7 +58,8 @@ class GameEngine {
             Config.initialWidth,
             Config.blockHeight,
             'normal',
-            Config.colors.baseBlock
+            Config.colors.baseBlock,
+            '#5c2e0b'
         );
         baseBlock.direction = 0; // 基石不动
         this.blocks.push(baseBlock);
@@ -92,11 +102,18 @@ class GameEngine {
         let dir = Math.random() > 0.5 ? 1 : -1;
         let x = dir === 1 ? -width : this.canvas.width;
 
-        // 颜色渐变
-        this.hue = (this.hue + Config.colors.hueSpeed) % 360;
-        let color = `hsl(${this.hue}, ${Config.colors.saturation}, ${Config.colors.lightness})`;
+        // 颜色配置
+        let color = Config.colors.normalBlock;
+        let borderColor = Config.colors.normalBorder;
+        if (type === 'trapezoid') {
+            color = Config.colors.trapezoidBlock;
+            borderColor = Config.colors.trapezoidBorder;
+        } else if (type === 'special') {
+            color = Config.colors.specialBlock;
+            borderColor = Config.colors.specialBorder;
+        }
 
-        const newBlock = new Block(x, y, width, Config.blockHeight, type, color);
+        const newBlock = new Block(x, y, width, Config.blockHeight, type, color, borderColor);
         newBlock.direction = dir;
         // 增加一点点速度，随着层数增加
         newBlock.speed = Config.slideSpeed + (this.layerCount * 0.05);
@@ -118,6 +135,10 @@ class GameEngine {
         if (navigator.vibrate) {
             navigator.vibrate(50); // 触发短促震动
         }
+
+        // 播放鼓声效
+        this.audio.drum.currentTime = 0;
+        this.audio.drum.play().catch(e => console.log('Audio error:', e));
 
         const currentBlock = this.blocks[this.blocks.length - 1];
         const prevBlock = this.blocks[this.blocks.length - 2];
@@ -146,6 +167,7 @@ class GameEngine {
         if (diff <= Config.perfectTolerance && currentBlock.type !== 'special') {
             isPerfect = true;
             this.comboCount++;
+            currentBlock.comboGlow = 1.0; // 开启高亮发光反馈
             currentBlock.x = prevEdge.left; // 强行对齐，完美吸附
             overlapWidth = prevEdge.width;  // 不削减宽度
             
@@ -169,6 +191,13 @@ class GameEngine {
                 currentBlock.x = prevEdge.left; // 吸附
                 overlapWidth = prevEdge.width;
             } else {
+                // 削减部分产生碎片粒子
+                let slicedWidth = currentBlock.width - overlapWidth;
+                if (slicedWidth > 0) {
+                    let sliceX = currentBlock.x < prevEdge.left ? currentBlock.x : overlapEnd;
+                    this.spawnParticles(sliceX, currentBlock.y, slicedWidth, currentBlock.height, currentBlock.color);
+                }
+
                 currentBlock.width = overlapWidth;
                 currentBlock.x = overlapStart;
             }
@@ -254,6 +283,24 @@ class GameEngine {
                 this.handleSkip();
             }
         }
+
+        // 更新粒子
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            this.particles[i].update();
+            if (this.particles[i].life <= 0) {
+                this.particles.splice(i, 1);
+            }
+        }
+    }
+
+    spawnParticles(x, y, w, h, color) {
+        // 在切掉的区域生成若干粗糙质感的粒子
+        let count = Math.min(20, Math.max(5, Math.floor(w / 4)));
+        for (let i = 0; i < count; i++) {
+            let px = x + Math.random() * w;
+            let py = y + Math.random() * h;
+            this.particles.push(new Particle(px, py, color));
+        }
     }
 
     // 绘制画面
@@ -266,151 +313,71 @@ class GameEngine {
             const nextBlock = (i + 1 < this.blocks.length) ? this.blocks[i + 1] : null;
             this.blocks[i].draw(this.ctx, this.cameraY, nextBlock);
         }
+
+        // 绘制粒子
+        this.particles.forEach(p => p.draw(this.ctx, this.cameraY));
     }
 }
 
-// 动态背景渲染器
+// 简单的 2D 物理粒子，用于模拟碎块
+class Particle {
+    constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 6; // 左右横飞
+        this.vy = Math.random() * -4 - 1;    // 向上抛起
+        this.size = Math.random() * 6 + 2;   // 随机大小，大一点有水泥碎块感
+        this.color = color;
+        this.life = 1.0;
+        this.decay = Math.random() * 0.02 + 0.02; // 生命衰减
+    }
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.vy += 0.5; // 重力
+        this.life -= this.decay;
+    }
+    draw(ctx, cameraY) {
+        if (this.life <= 0) return;
+        ctx.fillStyle = this.color;
+        ctx.globalAlpha = this.life;
+        ctx.fillRect(this.x, this.y - cameraY, this.size, this.size);
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+// 静态背景渲染器 (移除了 SVG 生成)
 class BackgroundRenderer {
     constructor() {
-        this.stars = Array.from({length: 80}, () => ({
-            x: Math.random(), 
-            y: Math.random() * 5000 + Config.bgAltitudes.cloud, // 在云层上方分布
-            size: Math.random() * 2 + 1
-        }));
-        this.clouds = Array.from({length: 20}, () => ({
-            x: Math.random(),
-            y: Math.random() * 2500 + Config.bgAltitudes.mountain, // 山脉到星系之间分布
-            width: Math.random() * 80 + 50
-        }));
-        
-        // 缓存 SVG 实体背景 Image 对象
-        this.images = {
-            grass: new Image(),
-            city: new Image(),
-            mountain: new Image(),
-            galaxy: new Image()
-        };
-        this.images.grass.src = Config.bgEntities.grass;
-        this.images.city.src = Config.bgEntities.city;
-        this.images.mountain.src = Config.bgEntities.mountain;
-        this.images.galaxy.src = Config.bgEntities.galaxy;
+        this.bgImage = new Image();
+        this.bgImage.src = Config.bgImage;
     }
     
     draw(ctx, width, height, cameraY) {
-        let altTop = -cameraY + height;
-        let altBottom = -cameraY;
-
-        // 1. 绘制渐变背景底色
-        const grad = ctx.createLinearGradient(0, 0, 0, height);
-        grad.addColorStop(0, this.getColor(altTop));
-        grad.addColorStop(1, this.getColor(altBottom));
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, width, height);
-
-        // 2. 绘制视差粒子 (云、星星)
-        this.drawParticles(ctx, width, height, cameraY);
+        // 如果图片没有加载好，画个纯色底
+        if (!this.bgImage.complete || this.bgImage.naturalWidth === 0) {
+            ctx.fillStyle = Config.colors.background;
+            ctx.fillRect(0, 0, width, height);
+            return;
+        }
         
-        // 3. 绘制实体背景 (SVG Images, 附带淡入淡出与轻微视差)
-        this.drawEntities(ctx, width, height, altBottom);
-    }
-
-    drawParticles(ctx, width, height, cameraY) {
-        // --- 云朵 ---
-        this.clouds.forEach(c => {
-            let cRenderY = -c.y - cameraY * 0.6; // 强视差
-            if (cRenderY > -50 && cRenderY < height + 50) {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-                ctx.beginPath();
-                ctx.arc(c.x * width, cRenderY, c.width/2, 0, Math.PI * 2);
-                ctx.arc(c.x * width - c.width*0.4, cRenderY + c.width*0.1, c.width*0.3, 0, Math.PI*2);
-                ctx.arc(c.x * width + c.width*0.4, cRenderY + c.width*0.1, c.width*0.3, 0, Math.PI*2);
-                ctx.fill();
-            }
-        });
-
-        // --- 星星 ---
-        ctx.fillStyle = '#ffffff';
-        this.stars.forEach(s => {
-            let sRenderY = -s.y - cameraY * 0.4; // 极强视差
-            if (sRenderY > -10 && sRenderY < height + 10) {
-                ctx.beginPath();
-                ctx.arc(s.x * width, sRenderY, s.size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        });
-    }
-
-    drawEntities(ctx, width, height, alt) {
-        // 渲染单个实体的辅助函数
-        const drawImg = (img, alpha, targetAlt) => {
-            if (alpha <= 0.01) return; // 优化：完全透明时不渲染
-            if (!img.complete || img.naturalWidth === 0) return; // 确保加载完成
-            
-            ctx.save();
-            ctx.globalAlpha = alpha;
-            // 固定大小比例 1.2 倍
-            const imgW = img.width * 1.2;
-            const imgH = img.height * 1.2;
-            
-            // 加入轻微视差：随着海拔偏离目标值，实体稍微向下移动
-            const parallaxY = (alt - targetAlt) * 0.1;
-            const x = (width - imgW) / 2;
-            const y = height - imgH - 50 + parallaxY;
-            
-            ctx.drawImage(img, x, y, imgW, imgH);
-            ctx.restore();
-        };
-
-        const cityAlt = Config.bgAltitudes.city;
-        const mountainAlt = Config.bgAltitudes.mountain;
-        const galaxyAlt = Config.bgAltitudes.galaxy;
+        // 使用 cover 方式居中绘制静态背景
+        const imgRatio = this.bgImage.width / this.bgImage.height;
+        const canvasRatio = width / height;
+        let drawW, drawH, x, y;
         
-        // 过渡区间高度（即淡入淡出持续的海拔跨度）
-        const fadeRange = 400; 
-
-        // 1. 草原实体 (大树) - 默认显示，进入城市前淡出
-        let grassAlpha = 1.0;
-        if (alt > cityAlt - fadeRange) grassAlpha = 1 - (alt - (cityAlt - fadeRange)) / fadeRange;
-        if (alt > cityAlt) grassAlpha = 0;
-        drawImg(this.images.grass, grassAlpha, 0);
-
-        // 2. 城市实体 (高楼) - 城市区间淡入，山脉区间淡出
-        let cityAlpha = 0;
-        if (alt > cityAlt - fadeRange && alt <= cityAlt) {
-            cityAlpha = (alt - (cityAlt - fadeRange)) / fadeRange;
-        } else if (alt > cityAlt && alt <= mountainAlt - fadeRange) {
-            cityAlpha = 1.0;
-        } else if (alt > mountainAlt - fadeRange && alt <= mountainAlt) {
-            cityAlpha = 1 - (alt - (mountainAlt - fadeRange)) / fadeRange;
+        if (imgRatio > canvasRatio) {
+            drawH = height;
+            drawW = height * imgRatio;
+            x = (width - drawW) / 2;
+            y = 0;
+        } else {
+            drawW = width;
+            drawH = width / imgRatio;
+            x = 0;
+            y = (height - drawH) / 2;
         }
-        drawImg(this.images.city, Math.max(0, Math.min(1, cityAlpha)), cityAlt);
-
-        // 3. 山脉实体 (雪山) - 山脉区间淡入，星空区间淡出
-        let mountainAlpha = 0;
-        if (alt > mountainAlt - fadeRange && alt <= mountainAlt) {
-            mountainAlpha = (alt - (mountainAlt - fadeRange)) / fadeRange;
-        } else if (alt > mountainAlt && alt <= galaxyAlt - fadeRange) {
-            mountainAlpha = 1.0;
-        } else if (alt > galaxyAlt - fadeRange && alt <= galaxyAlt) {
-            mountainAlpha = 1 - (alt - (galaxyAlt - fadeRange)) / fadeRange;
-        }
-        drawImg(this.images.mountain, Math.max(0, Math.min(1, mountainAlpha)), mountainAlt);
-
-        // 4. 星空实体 (星球) - 星空区间淡入
-        let galaxyAlpha = 0;
-        if (alt > galaxyAlt - fadeRange && alt <= galaxyAlt) {
-            galaxyAlpha = (alt - (galaxyAlt - fadeRange)) / fadeRange;
-        } else if (alt > galaxyAlt) {
-            galaxyAlpha = 1.0;
-        }
-        drawImg(this.images.galaxy, Math.max(0, Math.min(1, galaxyAlpha)), galaxyAlt);
-    }
-
-    getColor(alt) {
-        if (alt < Config.bgAltitudes.city) return '#c8e6c9'; // 草原：清新浅绿
-        if (alt < Config.bgAltitudes.mountain) return '#bbdefb'; // 城市上空：清澈浅蓝
-        if (alt < Config.bgAltitudes.cloud) return '#90caf9'; // 山脉上空：稍深的天蓝
-        if (alt < Config.bgAltitudes.galaxy) return '#3f51b5'; // 云层上空：深蓝
-        return '#1a237e'; // 星系：暗夜紫蓝
+        
+        ctx.drawImage(this.bgImage, x, y, drawW, drawH);
     }
 }

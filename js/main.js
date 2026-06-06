@@ -25,20 +25,23 @@ window.onload = () => {
         onStart: () => {
             engine.state = 'PLAYING';
             engine.initGame();
+            engine.audio.piano.play().catch(e => console.log('自动播放被拦截:', e));
         },
         onResume: () => {
             engine.state = 'PLAYING';
             engine.skipCount = 0; // 重置跳过次数
             engine.spawnNextBlock(); // 重新生成方块
+            engine.audio.piano.play().catch(e => console.log('自动播放被拦截:', e));
         },
         onRestart: () => {
             engine.initGame();
             engine.state = 'PLAYING';
             ui.updateScore(0, 0);
             ui.updateComboCounter(0);
+            engine.audio.piano.play().catch(e => console.log('自动播放被拦截:', e));
         },
         onExport: () => {
-            ui.exportPolaroid(engine.score, engine.collectedTrapezoidWords, engine.collectedSpecialWords, engine.ctx, canvas.width, canvas.height);
+            ui.exportPolaroid(engine.score, engine.collectedTrapezoidWords, engine.collectedSpecialWords, engine, canvas.width, canvas.height);
         }
     });
 

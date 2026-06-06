@@ -149,88 +149,128 @@ class UIManager {
         }, 1000);
     }
 
-    // 导出战绩图片 (绘制内存Canvas并下载)
-    exportPolaroid(score, trapezoidWords, specialWords, gameCanvasCtx, canvasWidth, canvasHeight) {
+    // 导出战绩图片 (词云图)
+    exportPolaroid(score, trapezoidWords, specialWords, engine, canvasWidth, canvasHeight) {
         const ctx = this.exportCanvas.getContext('2d');
         
         // 设置图片尺寸
         this.exportCanvas.width = canvasWidth;
         this.exportCanvas.height = canvasHeight;
         
-        // === 绘制虚化背景 ===
-        ctx.filter = 'blur(10px) brightness(0.6)';
-        ctx.drawImage(gameCanvasCtx.canvas, 0, 0, canvasWidth, canvasHeight);
-        ctx.filter = 'none'; // 恢复
+        // === 1. 绘制当前阶段的纯净背景 ===
+        engine.bgRenderer.draw(ctx, canvasWidth, canvasHeight, engine.cameraY);
 
-        // === 绘制半透明黑色遮罩，增加文字可读性 ===
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        // === 2. 绘制一层轻微的遮罩，保证文字清晰 ===
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-        // === 绘制中心战绩卡片 ===
-        const cardWidth = canvasWidth * 0.8;
-        const cardHeight = canvasHeight * 0.7;
-        const cardX = (canvasWidth - cardWidth) / 2;
-        const cardY = (canvasHeight - cardHeight) / 2;
-        
-        // 圆角矩形卡片
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-        ctx.beginPath();
-        ctx.roundRect(cardX, cardY, cardWidth, cardHeight, 16);
-        ctx.fill();
-        ctx.shadowColor = 'transparent';
-
-        // === 绘制文字信息 ===
-        ctx.fillStyle = '#333';
+        // === 3. 绘制标题和分数 ===
         ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
         
-        // 标题
-        ctx.font = 'bold 32px sans-serif';
-        ctx.fillText(Config.text.gameName, canvasWidth / 2, cardY + 50);
+        // 游戏名和分数在顶部
+        ctx.font = 'bold 36px sans-serif';
+        ctx.fillStyle = '#333';
+        ctx.fillText(Config.text.gameName, canvasWidth / 2, 60);
         
-        // 成绩
         ctx.font = 'bold 48px sans-serif';
         ctx.fillStyle = '#FF5722';
-        ctx.fillText(`${score}`, canvasWidth / 2, cardY + 120);
-        ctx.font = '16px sans-serif';
-        ctx.fillStyle = '#666';
-        ctx.fillText('总得分', canvasWidth / 2, cardY + 145);
+        ctx.fillText(`${score} 分`, canvasWidth / 2, 120);
 
-        // 双列词汇表标题
-        const colY = cardY + 190;
-        ctx.font = 'bold 18px sans-serif';
-        ctx.fillStyle = '#333';
-        ctx.fillText('基础收集', cardX + cardWidth * 0.25, colY);
-        ctx.fillText('特殊收集', cardX + cardWidth * 0.75, colY);
+        // === 4. 绘制词云 ===
+        const allWords = [...trapezoidWords, ...specialWords];
+        if (allWords.length > 0) {
+            // 词云色盘 (较深的马卡龙色以保证在浅色背景上可见)
+            const colors = ['#E57373', '#F06292', '#BA68C8', '#7986CB', '#4FC3F7', '#4DB6AC', '#81C784', '#FF8A65'];
+            const placedBoxes = []; // 用于碰撞检测的边界框数组
+            
+            // 为标题和分数预留空间
+            placedBoxes.push({
+                x: canvasWidth / 2,
+                y: 90,
+                w: 300,
+                h: 150
+            });
 
-        // 双列词汇绘制逻辑
-        ctx.font = '14px sans-serif';
-        ctx.fillStyle = '#555';
-        
-        const drawColumn = (words, xOffset) => {
-            let limit = Math.min(words.length, 8); // 最多显示8个防止溢出
-            for (let i = 0; i < limit; i++) {
-                ctx.fillText(words[i], cardX + cardWidth * xOffset, colY + 30 + i * 25);
-            }
-            if (words.length > 8) {
-                ctx.fillText('...', cardX + cardWidth * xOffset, colY + 30 + limit * 25);
-            }
-            if (words.length === 0) {
-                ctx.fillText('无', cardX + cardWidth * xOffset, colY + 30);
-            }
-        };
+            // 随机打乱单词顺序
+            allWords.sort(() => Math.random() - 0.5);
 
-        drawColumn(trapezoidWords, 0.25);
-        drawColumn(specialWords, 0.75);
-        
+            for (let word of allWords) {
+                // 随机大小和颜色
+                const isSpecial = specialWords.includes(word);
+                const fontSize = isSpecial ? (Math.floor(Math.random() * 20) + 36) : (Math.floor(Math.random() * 20) + 20); // 特殊词汇更大
+                ctx.font = `bold ${fontSize}px sans-serif`;
+                const metrics = ctx.measureText(word);
+                const w = metrics.width + 10; // 加点 padding
+                const h = fontSize + 10;
+                
+                let placed = false;
+                let angle = Math.random() * Math.PI * 2;
+                let radius = 0;
+                const maxRadius = Math.min(canvasWidth, canvasHeight);
+                
+                // 螺旋形寻位
+                while (radius < maxRadius) {
+                    let x = canvasWidth / 2 + Math.cos(angle) * radius;
+                    let y = canvasHeight / 2 + 50 + Math.sin(angle) * radius; // 中心偏下
+                    
+                    // 检查是否超出边界
+                    if (x - w/2 > 20 && x + w/2 < canvasWidth - 20 && y - h/2 > 160 && y + h/2 < canvasHeight - 20) {
+                        // 碰撞检测
+                        let collision = false;
+                        for (let box of placedBoxes) {
+                            if (!(x + w/2 < box.x - box.w/2 || 
+                                  x - w/2 > box.x + box.w/2 || 
+                                  y + h/2 < box.y - box.h/2 || 
+                                  y - h/2 > box.y + box.h/2)) {
+                                collision = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!collision) {
+                            placedBoxes.push({x, y, w, h});
+                            
+                            // 绘制文字 (带白边使其更清晰)
+                            ctx.font = `bold ${fontSize}px sans-serif`;
+                            ctx.lineWidth = 4;
+                            ctx.strokeStyle = 'white';
+                            ctx.strokeText(word, x, y);
+                            
+                            ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
+                            ctx.fillText(word, x, y);
+                            
+                            placed = true;
+                            break;
+                        }
+                    }
+                    
+                    angle += 0.5;
+                    radius += 3;
+                }
+            }
+        } else {
+            // 没有收集到词汇
+            ctx.font = '24px sans-serif';
+            ctx.fillStyle = '#666';
+            ctx.fillText('没有收集到任何词汇哦', canvasWidth / 2, canvasHeight / 2);
+        }
+
         // 转为 Base64 下载
         try {
             const dataUrl = this.exportCanvas.toDataURL('image/png');
-            const a = document.createElement('a');
-            a.href = dataUrl;
-            a.download = `字筑高塔_战绩_${score}层.png`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+            const link = document.createElement('a');
+            
+            // 按照时间_分数命名
+            const now = new Date();
+            const timeStr = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`;
+            link.download = `${timeStr}_${score}.png`;
+            
+            link.href = dataUrl;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            this.showToast('导出成功');
         } catch (e) {
             alert('导出图片失败，可能是环境限制。');
             console.error(e);

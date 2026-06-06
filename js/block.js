@@ -1,13 +1,16 @@
 class Block {
-    constructor(x, y, width, height, type = 'normal', color = '#333') {
+    constructor(x, y, width, height, type = 'normal', color = '#333', borderColor = '#000') {
         this.x = x;           // 方块左上角X坐标
         this.y = y;           // 方块左上角Y坐标
         this.width = width;   // 方块下底宽度
         this.height = height; // 方块高度
         this.type = type;     // 'normal', 'trapezoid', 'special'
         this.color = color;   // 方块颜色
+        this.borderColor = borderColor; // 方块边框色
         this.direction = Math.random() > 0.5 ? 1 : -1; // 1为向右，-1为向左
         this.speed = Config.slideSpeed;
+        
+        this.comboGlow = 0;   // Combo 发光计时器
         
         // 梯形块特有属性：上底宽度缩减量（每边缩减的像素）
         this.trapezoidIndent = 0;
@@ -87,14 +90,43 @@ class Block {
         }
         
         ctx.closePath();
+
+        // 完美 Combo 发光特效
+        if (this.comboGlow > 0) {
+            ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+            ctx.shadowBlur = this.comboGlow * 20;
+            this.comboGlow = Math.max(0, this.comboGlow - 0.05); // 每帧衰减
+        } else if (this.type === 'special') {
+            // 特殊块自带轻微泛光
+            ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
+            ctx.shadowBlur = 10;
+        } else {
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+        }
+
         ctx.fill();
 
-        // 特殊块描边
-        if (this.type === 'special') {
-            ctx.strokeStyle = Config.colors.specialBorder;
-            ctx.lineWidth = 2;
-            ctx.stroke();
+        // 绘制普通方块的水泥砖纹理 (极淡的水平线)
+        if (this.type === 'normal') {
+            ctx.save();
+            ctx.clip(); // 限制在圆角多边形内
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.lineWidth = 1;
+            for (let ly = renderY + 5; ly < renderY + this.height; ly += 8) {
+                ctx.beginPath();
+                ctx.moveTo(this.x, ly);
+                ctx.lineTo(this.x + this.width, ly);
+                ctx.stroke();
+            }
+            ctx.restore();
         }
+
+        // 绘制像素边框
+        ctx.shadowBlur = 0; // 边框不发光
+        ctx.strokeStyle = this.borderColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
 
         // 绘制文字 (梯形或特殊块)
         if (this.word && !this.isWordHidden) {
