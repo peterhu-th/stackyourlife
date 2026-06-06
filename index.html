@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>字筑高塔</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- 游戏主容器 -->
+    <div id="game-container">
+        <!-- 主画布 -->
+        <canvas id="game-canvas"></canvas>
+        
+        <!-- 实时分数显示 -->
+        <div id="score-wrapper">
+            <div id="score-display">0</div>
+            <div id="layer-display">第 0 层</div>
+        </div>
+
+        <!-- 极窄提示 (Toast) -->
+        <div id="toast-message" class="hidden">方块太窄，文字已隐藏</div>
+        <!-- Combo 提示 -->
+        <div id="combo-message" class="hidden"></div>
+        <!-- 连击计数器 -->
+        <div id="combo-counter" class="hidden">Combo x<span id="combo-num">0</span></div>
+    </div>
+
+    <!-- UI 覆盖层 -->
+    <div id="ui-layer">
+        <!-- 欢迎/开始界面 -->
+        <div id="tutorial-modal" class="modal">
+            <h1>字筑高塔</h1>
+            <p id="tutorial-text"></p>
+            <button id="start-btn">开始建造</button>
+        </div>
+
+        <!-- 防消极惩罚提示 -->
+        <div id="penalty-modal" class="modal hidden">
+            <h2>温馨提示</h2>
+            <p id="penalty-text"></p>
+            <button id="resume-btn">我知道了，继续</button>
+        </div>
+
+        <!-- 结算界面 -->
+        <div id="game-over-modal" class="modal hidden">
+            <h2>游戏结束</h2>
+            <p class="final-score">总得分: <span id="final-score-num">0</span> <br><small>层数: <span id="final-layer-num">0</span></small></p>
+            
+            <div class="collected-words-container">
+                <h3>收集到的词汇</h3>
+                <div class="words-columns">
+                    <div class="words-col">
+                        <h4>基础词汇</h4>
+                        <ul id="trapezoid-words-list"></ul>
+                    </div>
+                    <div class="words-col">
+                        <h4>特殊词汇</h4>
+                        <ul id="special-words-list"></ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button id="restart-btn">再来一局</button>
+                <button id="export-btn">导出战绩</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 离线图片导出用的隐藏画布 -->
+    <canvas id="export-canvas" style="display: none;"></canvas>
+
+    <!-- 脚本引入 -->
+    <script src="js/config.js"></script>
+    <script src="js/block.js"></script>
+    <script src="js/engine.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
